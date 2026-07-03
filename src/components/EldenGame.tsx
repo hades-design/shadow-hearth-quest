@@ -1080,10 +1080,11 @@ function renderFrame(
     ctx.fillRect(c.pos.x - 16, c.pos.y - 12, 32, 24);
     ctx.fillStyle = "oklch(0.7 0.14 55)";
     ctx.fillRect(c.pos.x - 16, c.pos.y - 14, 32, 4);
-    ctx.strokeStyle = RARITY_COLOR[LOOT_TABLES[c.rarity] ? c.rarity as any : "common"] ?? "oklch(0.7 0.15 60)";
+    const rarityColor = RARITY_COLOR[c.rarity as keyof typeof RARITY_COLOR] ?? "oklch(0.7 0.15 60)";
+    ctx.strokeStyle = rarityColor;
     ctx.lineWidth = 2;
     ctx.strokeRect(c.pos.x - 16, c.pos.y - 12, 32, 24);
-    ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.shadowColor = rarityColor; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0;
   }
 
   // particles behind
@@ -1131,9 +1132,9 @@ function renderFrame(
   }
 
   // Boss health bar
-  const boss = s.room.enemies.find(e => ENEMY_DEFS[e.kind].isBoss);
+  const boss = s.room.enemies.find((e: Enemy) => ENEMY_DEFS[e.kind as EnemyKind].isBoss) as Enemy | undefined;
   if (boss) {
-    const def = ENEMY_DEFS[boss.kind];
+    const def = ENEMY_DEFS[boss.kind as EnemyKind];
     const bw = 620;
     const bx = (W - bw) / 2, by = H - 70;
     ctx.fillStyle = "oklch(0 0 0 / 0.7)"; ctx.fillRect(bx - 2, by - 2, bw + 4, 20);
