@@ -992,8 +992,8 @@ export default function EldenGame() {
 // ============================================================================
 function renderFrame(
   ctx: CanvasRenderingContext2D, now: number,
-  s: ReturnType<typeof useDummy>,
-  mods: SkillMods, effStats: Stats,
+  s: any,
+  _mods: SkillMods, _effStats: Stats,
 ) {
   // floor
   ctx.fillStyle = "oklch(0.11 0.008 60)";
