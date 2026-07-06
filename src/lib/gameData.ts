@@ -325,3 +325,117 @@ export const ENEMY_DEFS: Record<EnemyKind, EnemyDef> = {
 };
 
 export const BOSS_SEQUENCE: EnemyKind[] = ["grafted_scion", "crucible_knight", "margit", "godrick", "malenia", "radahn"];
+
+// ==========================================================================
+// Upgrades & Enchantments
+// ==========================================================================
+export const MAX_LEVEL = 10;
+
+export type Material = "smithing_stone" | "somber_stone" | "glintstone_shard" | "sacred_tear" | "rune_arc";
+
+export const MATERIALS: Record<Material, { name: string; icon: string; color: string; desc: string }> = {
+  smithing_stone: { name: "Smithing Stone", icon: "◉", color: "oklch(0.7 0.02 70)", desc: "Reinforces common and uncommon arms." },
+  somber_stone: { name: "Somber Smithing Stone", icon: "◈", color: "oklch(0.55 0.05 260)", desc: "Reinforces legendary and unique arms." },
+  glintstone_shard: { name: "Glintstone Shard", icon: "✦", color: "oklch(0.7 0.18 250)", desc: "A shard of primeval current — imbues cold or magic." },
+  sacred_tear: { name: "Sacred Tear", icon: "✧", color: "oklch(0.85 0.13 85)", desc: "A tear of the Erdtree — imbues fire or holy." },
+  rune_arc: { name: "Rune Arc", icon: "◆", color: "oklch(0.78 0.16 60)", desc: "Fragment of a Great Rune. Unlocks unique enchantments." },
+};
+
+export type Enchant = "none" | "fire" | "magic" | "holy" | "blood" | "frost";
+
+export const ENCHANTS: Record<Enchant, {
+  name: string; color: string; desc: string;
+  cost: Partial<Record<Material, number>>;
+  dmgMul: number; critAdd: number; bleedAdd: number; freezeAdd: number; lifestealAdd: number; burnAdd: number;
+}> = {
+  none:  { name: "None",        color: "oklch(0.6 0.02 70)",   desc: "No affinity.",                                           cost: {}, dmgMul: 1,    critAdd: 0,    bleedAdd: 0,    freezeAdd: 0,    lifestealAdd: 0, burnAdd: 0 },
+  fire:  { name: "Fire",        color: "oklch(0.75 0.19 40)",  desc: "Attacks scorch — bonus damage and burn ticks.",         cost: { sacred_tear: 1, smithing_stone: 2 }, dmgMul: 1.2,  critAdd: 0,    bleedAdd: 0,    freezeAdd: 0,    lifestealAdd: 0, burnAdd: 0.5 },
+  magic: { name: "Magic",       color: "oklch(0.7 0.19 250)",  desc: "Glintstone shell — extra spell/scaling damage.",         cost: { glintstone_shard: 2, smithing_stone: 1 }, dmgMul: 1.25, critAdd: 0.05, bleedAdd: 0,    freezeAdd: 0,    lifestealAdd: 0, burnAdd: 0 },
+  holy:  { name: "Sacred",      color: "oklch(0.85 0.13 85)",  desc: "Blessed by grace — lifesteal on strike.",                cost: { sacred_tear: 2, rune_arc: 1 }, dmgMul: 1.15, critAdd: 0,    bleedAdd: 0,    freezeAdd: 0,    lifestealAdd: 0.08, burnAdd: 0 },
+  blood: { name: "Blood",       color: "oklch(0.45 0.2 25)",   desc: "Cruel edge — high bleed chance.",                        cost: { smithing_stone: 3, rune_arc: 1 }, dmgMul: 1.1, critAdd: 0.05, bleedAdd: 0.4, freezeAdd: 0,    lifestealAdd: 0, burnAdd: 0 },
+  frost: { name: "Frost",       color: "oklch(0.75 0.10 220)", desc: "Ashen mist — chance to freeze foes.",                    cost: { glintstone_shard: 3 }, dmgMul: 1.1, critAdd: 0,    bleedAdd: 0,    freezeAdd: 0.35, lifestealAdd: 0, burnAdd: 0 },
+};
+
+export function upgradeCost(fromLvl: number, rarity: Rarity): Partial<Record<Material, number>> {
+  const somber = rarity === "legendary" || rarity === "unique";
+  const stone: Material = somber ? "somber_stone" : "smithing_stone";
+  const base = Math.max(1, Math.floor(1 + fromLvl * 0.7));
+  const out: Partial<Record<Material, number>> = { [stone]: base };
+  if (fromLvl >= 3) out.glintstone_shard = 1 + Math.floor((fromLvl - 3) / 2);
+  if (fromLvl >= 6) out.sacred_tear = 1 + Math.floor((fromLvl - 6) / 2);
+  if (fromLvl >= 9) out.rune_arc = 1;
+  return out;
+}
+
+// Damage / defense multiplier at a given upgrade level (0..MAX_LEVEL)
+export const levelMul = (lvl: number) => 1 + lvl * 0.12;
+
+// ==========================================================================
+// Boss loot — Hades-inspired guaranteed rewards
+// ==========================================================================
+export type BossLoot = {
+  items: string[]; // possible weapon/armor drops (choose 2 for boon window)
+  spell?: { id: "flame" | "glintstone" | "holy" | "starburst" | "rot_breath"; name: string; desc: string };
+  materials: Partial<Record<Material, number>>;
+  runeArcs: number;
+  sp: number;
+};
+
+export const BOSS_LOOT: Record<EnemyKind, BossLoot | undefined> = {
+  hollow: undefined, beast: undefined, wraith: undefined, knight: undefined,
+  grafted_scion: {
+    items: ["claymore", "crucible_plate", "crimson_amber"],
+    spell: { id: "flame", name: "Catch Flame", desc: "A short-range gout of flame." },
+    materials: { smithing_stone: 4, sacred_tear: 1 },
+    runeArcs: 0, sp: 2,
+  },
+  crucible_knight: {
+    items: ["flamberge", "crucible_plate", "green_turtle"],
+    spell: { id: "flame", name: "Aspects of the Crucible", desc: "Primeval flame washes forward." },
+    materials: { smithing_stone: 6, sacred_tear: 1, glintstone_shard: 1 },
+    runeArcs: 1, sp: 2,
+  },
+  margit: {
+    items: ["flamberge", "godfrey_icon", "radagon_seal"],
+    spell: { id: "holy", name: "Margit's Shackle", desc: "Golden bolts hurled toward the foe." },
+    materials: { smithing_stone: 8, somber_stone: 1, rune_arc: 1 },
+    runeArcs: 1, sp: 3,
+  },
+  godrick: {
+    items: ["blasphemous_blade", "radahn_pauldrons", "graven_school"],
+    spell: { id: "flame", name: "Dragon Communion", desc: "A rippling gout of dragonfire." },
+    materials: { somber_stone: 2, sacred_tear: 2, rune_arc: 1, smithing_stone: 6 },
+    runeArcs: 1, sp: 3,
+  },
+  malenia: {
+    items: ["moonveil", "malenia_veil", "godfrey_icon"],
+    spell: { id: "rot_breath", name: "Scarlet Aeonia", desc: "Bursts of scarlet rot follow your cast." },
+    materials: { somber_stone: 3, glintstone_shard: 3, rune_arc: 1 },
+    runeArcs: 2, sp: 4,
+  },
+  radahn: {
+    items: ["dark_moon_greatsword", "radahn_pauldrons", "moonveil"],
+    spell: { id: "starburst", name: "Starcaller Cry", desc: "Draws gravitational stars to the caster." },
+    materials: { somber_stone: 5, glintstone_shard: 5, rune_arc: 2 },
+    runeArcs: 3, sp: 5,
+  },
+};
+
+// ==========================================================================
+// Boons — Hades-style temporary run buffs from special chests
+// ==========================================================================
+export type Boon = {
+  id: string; name: string; god: string; color: string; icon: string; desc: string;
+  apply: (m: SkillMods) => void;
+};
+
+export const BOONS: Boon[] = [
+  { id: "boon_marika", name: "Grace of Marika",   god: "Queen Marika",       color: "oklch(0.85 0.13 85)", icon: "✧", desc: "+20% HP, slow passive regen.",       apply: m => { m.hpMul *= 1.2; m.passiveHeal += 0.03; } },
+  { id: "boon_godwyn", name: "Prince's Might",    god: "Godwyn the Golden",  color: "oklch(0.82 0.14 70)", icon: "◈", desc: "+20% melee damage, +5% crit.",       apply: m => { m.dmgMul *= 1.2; m.critChance += 0.05; } },
+  { id: "boon_ranni",  name: "Cold of the Moon",  god: "Ranni the Witch",    color: "oklch(0.72 0.14 260)", icon: "☾", desc: "+25% spell damage, -20% FP cost.",   apply: m => { m.spellDmgMul *= 1.25; m.spellCostMul *= 0.8; } },
+  { id: "boon_mohg",   name: "Bloody Communion",  god: "Mohg, Lord of Blood",color: "oklch(0.5 0.22 25)",   icon: "❥", desc: "+25% bleed chance, +8% lifesteal.", apply: m => { m.bleedChance += 0.25; m.lifesteal += 0.08; } },
+  { id: "boon_placid", name: "Placidusax's Time", god: "Placidusax",         color: "oklch(0.6 0.06 40)",   icon: "⟁", desc: "+15% move speed, +20% stamina.",     apply: m => { m.moveSpeed *= 1.15; m.staminaMul *= 1.2; } },
+  { id: "boon_miquell",name: "Unalloyed Grace",   god: "Miquella",           color: "oklch(0.8 0.13 85)",   icon: "✦", desc: "+15% FP, +30% FP regen.",            apply: m => { m.fpMul *= 1.15; m.fpRegen += 0.3; } },
+  { id: "boon_melina", name: "Kindling of Melina",god: "Melina",             color: "oklch(0.75 0.19 40)",  icon: "❋", desc: "+15% damage, +15% spell damage.",   apply: m => { m.dmgMul *= 1.15; m.spellDmgMul *= 1.15; } },
+  { id: "boon_radagon",name: "Radagon's Fervor",  god: "Radagon",            color: "oklch(0.78 0.16 60)",  icon: "◆", desc: "-20% dodge cost, +10% crit.",       apply: m => { m.dodgeCost *= 0.8; m.critChance += 0.10; } },
+];
