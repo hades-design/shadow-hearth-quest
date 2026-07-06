@@ -1154,11 +1154,6 @@ export default function EldenGame() {
 // ============================================================================
 // Helper: enchant color for hit particles
 // ============================================================================
-declare module "@/lib/gameData" {
-  interface EnchantEntry { color(): string }
-}
-// Attach a helper on ENCHANTS entries lazily (patched at import time above via TS augmentation is only typings).
-// Provide a real function map here:
 const ENCH_HIT_COLOR: Record<Enchant, string> = {
   none: "oklch(0.42 0.19 25)",
   fire: "oklch(0.75 0.19 45)",
@@ -1167,12 +1162,6 @@ const ENCH_HIT_COLOR: Record<Enchant, string> = {
   blood: "oklch(0.45 0.22 25)",
   frost: "oklch(0.75 0.15 220)",
 };
-// Attach `.color()` to ENCHANTS entries once:
-for (const k in ENCHANTS) {
-  const key = k as Enchant;
-  const cur = ENCHANTS[key] as { color?: () => string };
-  if (!cur.color) cur.color = () => ENCH_HIT_COLOR[key];
-}
 
 // ============================================================================
 // Canvas rendering
