@@ -221,6 +221,8 @@ export default function EldenGame() {
 
   const startRun = useCallback((clsId: ClassId) => {
     const cls = CLASSES.find(c => c.id === clsId)!;
+    const prof = loadProfile();
+    s.profile = prof;
     s.cls = cls;
     s.stats = { ...cls.stats };
     s.level = 1;
@@ -232,22 +234,32 @@ export default function EldenGame() {
     s.inventory = [];
     s.learned = new Set();
     s.boons = new Set();
-    s.materials = { smithing_stone: 2, somber_stone: 0, glintstone_shard: 0, sacred_tear: 0, rune_arc: 0 };
+    s.materials = {
+      smithing_stone: 2 + prof.hub.startingStones, somber_stone: 0,
+      glintstone_shard: 0, sacred_tear: 0, rune_arc: 0,
+    };
     s.chosenSpell = null;
     s.depth = 1;
     s.roomsCleared = 0;
     s.bossesKilled = 0;
     s.projectiles = [];
     s.particles = [];
+    s.damageNums = [];
+    s.weather = [];
+    s.biome = biomeForDepth(1);
+    s.visitedRooms = [{ x: 0, y: 0, cleared: false, isBoss: false, isGrace: false, isCurrent: true }];
+    s.mapPos = { x: 0, y: 0 };
+    s.runStart = performance.now();
+    s.damageDealt = 0; s.damageTaken = 0; s.killsThisRun = 0;
     s.room = makeRoom((Date.now() ^ (cls.id.length * 9973)) & 0xffff, 1);
     const mm = defaultMods();
-    const maxHp = Math.round((60 + s.stats.vig * 10) * mm.hpMul);
-    const maxSt = Math.round((80 + s.stats.end * 5) * mm.staminaMul);
-    const maxFp = Math.round((40 + Math.max(s.stats.int, s.stats.fth) * 6) * mm.fpMul);
+    const maxHp = Math.round((60 + s.stats.vig * 10) * mm.hpMul) + prof.hub.hpBonus;
+    const maxSt = Math.round((80 + s.stats.end * 5) * mm.staminaMul) + prof.hub.staminaBonus;
+    const maxFp = Math.round((40 + Math.max(s.stats.int, s.stats.fth) * 6) * mm.fpMul) + prof.hub.fpBonus;
     s.player = {
       pos: { x: W / 2, y: H / 2 },
       hp: maxHp, maxHp, stamina: maxSt, maxStamina: maxSt, fp: maxFp, maxFp,
-      runes: 0, sp: 0,
+      runes: prof.hub.startingRunes, sp: 0,
       atkCd: 0, spellCd: 0, dashCd: 0, invuln: 60,
       facing: { x: 1, y: 0 }, swing: 0, ability: 0,
       bleed: { stacks: 0, timer: 0 }, burn: { stacks: 0, timer: 0 },
