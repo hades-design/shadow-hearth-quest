@@ -881,6 +881,11 @@ export default function EldenGame() {
       }
       s.particles = s.particles.filter(pt => pt.life > 0);
 
+      // weather + damage numbers
+      spawnWeather(s.weather, s.biome, W, H);
+      stepWeather(s.weather, dt, W, H);
+      stepDamage(s.damageNums, dt);
+
       // transitions
       if (s.room.cleared) {
         if (p.pos.y < 55 && s.room.doors.n) nextRoom("n");
