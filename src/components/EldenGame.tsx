@@ -1248,34 +1248,44 @@ function renderFrame(ctx: CanvasRenderingContext2D, now: number, s: unknown) {
     player: { pos: Vec; facing: Vec; swing: number; ability: number; buffTimer: number; invuln: number };
     equipped: { weapon: InvItem | null; armor: InvItem | null; talisman: InvItem | null };
     cls: ClassDef;
+    biome: Biome; weather: WeatherParticle[]; damageNums: DmgNumber[];
+    visitedRooms: { x: number; y: number; cleared: boolean; isBoss: boolean; isGrace: boolean; isCurrent: boolean }[];
+    mapPos: { x: number; y: number };
+    depth: number; roomsCleared: number; bossesKilled: number;
   };
+  const biome = st.biome ?? BIOMES[0];
   // floor
-  ctx.fillStyle = "oklch(0.11 0.008 60)";
+  ctx.fillStyle = biome.floor;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "oklch(0.17 0.01 60 / 0.55)"; ctx.lineWidth = 1;
+  ctx.strokeStyle = biome.floorAlt + " / 0.55)".replace(")", "");
+  // simpler: use floorAlt directly at low alpha via globalAlpha
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = biome.floorAlt;
+  ctx.lineWidth = 1;
   for (let x = 0; x < W; x += TILE) {
     for (let y = 0; y < H; y += TILE) {
       ctx.strokeRect(x, y, TILE, TILE);
       if (((x * 31 + y * 17) & 15) === 0) {
-        ctx.strokeStyle = "oklch(0.14 0.01 60 / 0.7)";
         ctx.beginPath(); ctx.moveTo(x + 5, y + 8); ctx.lineTo(x + 20, y + 22); ctx.stroke();
-        ctx.strokeStyle = "oklch(0.17 0.01 60 / 0.55)";
       }
     }
   }
+  ctx.globalAlpha = 1;
   const grad = ctx.createRadialGradient(W / 2, H / 2, 120, W / 2, H / 2, W * 0.72);
   grad.addColorStop(0, "rgba(0,0,0,0)");
   grad.addColorStop(1, "rgba(0,0,0,0.82)");
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
 
   // walls
-  ctx.fillStyle = "oklch(0.18 0.015 60)";
+  ctx.fillStyle = biome.wall;
   ctx.fillRect(0, 0, W, 40); ctx.fillRect(0, H - 40, W, 40);
   ctx.fillRect(0, 0, 40, H); ctx.fillRect(W - 40, 0, 40, H);
-  ctx.strokeStyle = "oklch(0.24 0.015 60 / 0.6)";
+  ctx.strokeStyle = biome.wallHi;
+  ctx.globalAlpha = 0.55;
   for (let x = 0; x < W; x += 40) { ctx.strokeRect(x, 0, 40, 40); ctx.strokeRect(x, H - 40, 40, 40); }
   for (let y = 0; y < H; y += 40) { ctx.strokeRect(0, y, 40, 40); ctx.strokeRect(W - 40, y, 40, 40); }
-  const doorColor = st.room.cleared ? "oklch(0.72 0.19 45 / 0.85)" : "oklch(0.24 0.02 60)";
+  ctx.globalAlpha = 1;
+  const doorColor = st.room.cleared ? biome.accent : biome.wallHi;
   ctx.fillStyle = doorColor;
   if (st.room.doors.n) ctx.fillRect(W / 2 - 46, 0, 92, 40);
   if (st.room.doors.s) ctx.fillRect(W / 2 - 46, H - 40, 92, 40);
