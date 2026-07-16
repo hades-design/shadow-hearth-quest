@@ -867,7 +867,11 @@ export default function EldenGame() {
         }
         return false;
       });
-      if (before > 0 && s.room.enemies.length === 0 && !s.room.cleared) s.room.cleared = true;
+      if (before > 0 && s.room.enemies.length === 0 && !s.room.cleared) {
+        s.room.cleared = true;
+        const cur = s.visitedRooms.find(v => v.isCurrent);
+        if (cur) cur.cleared = true;
+      }
 
       // chest interact
       if (s.room.chest && !s.room.chest.opened) {
