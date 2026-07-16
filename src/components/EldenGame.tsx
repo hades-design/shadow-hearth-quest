@@ -8,6 +8,17 @@ import {
   BOSS_LOOT, BOONS, Boon,
 } from "@/lib/gameData";
 import { sfx, setMuted, isMuted, unlockAudio } from "@/lib/audio";
+import {
+  loadProfile, saveProfile, recordKill, recordBossKill, tutorialSeen, markTutorialSeen,
+  HUB_UPGRADES, hubCost, purchaseHub, type Profile, type HubUpgradeId,
+} from "@/lib/save";
+import { BESTIARY } from "@/lib/bestiary";
+import {
+  BIOMES, biomeForDepth, spawnWeather, stepWeather, renderWeather,
+  type Biome, type WeatherParticle,
+} from "@/lib/biomes";
+import { spawnDamage, stepDamage, renderDamage, type DmgNumber, type DmgKind } from "@/lib/damageNumbers";
+import { startMusic, stopMusic, setMusicVolume, bossStinger } from "@/lib/music";
 
 // ============================================================================
 // Types & constants
@@ -134,12 +145,14 @@ const SPELL_TO_KIND: Record<string, Projectile["kind"]> = {
 export default function EldenGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [, setTick] = useState(0);
-  const [screen, setScreen] = useState<"title" | "class" | "play" | "dead" | "victory">("title");
-  const [panel, setPanel] = useState<"none" | "inventory" | "skills" | "smith">("none");
+  const [screen, setScreen] = useState<"title" | "class" | "play" | "dead" | "victory" | "hub">("title");
+  const [panel, setPanel] = useState<"none" | "inventory" | "skills" | "smith" | "pause" | "codex">("none");
   const [selectedClass, setSelectedClass] = useState<ClassId>("vagabond");
   const [hoverSkill, setHoverSkill] = useState<string | null>(null);
   const [muted, setMutedState] = useState(false);
   const [boonChoice, setBoonChoice] = useState<BoonChoice>(null);
+  const [profile, setProfile] = useState<Profile>(() => loadProfile());
+  const [tutorial, setTutorial] = useState<{ id: string; title: string; body: string } | null>(null);
 
   const stateRef = useRef({
     cls: CLASSES[0] as ClassDef,
@@ -165,10 +178,18 @@ export default function EldenGame() {
     depth: 1, roomsCleared: 0, bossesKilled: 0,
     projectiles: [] as Projectile[],
     particles: [] as Particle[],
+    damageNums: [] as DmgNumber[],
+    weather: [] as WeatherParticle[],
+    biome: BIOMES[0] as Biome,
+    visitedRooms: [] as { x: number; y: number; cleared: boolean; isBoss: boolean; isGrace: boolean; isCurrent: boolean }[],
+    mapPos: { x: 0, y: 0 },
     keys: {} as Record<string, boolean>,
     mouse: { x: W / 2, y: H / 2, down: false, downEdge: false, rightDown: false, rightEdge: false },
     message: "", messageTime: 0, subtitle: "", subtitleTime: 0,
     hitFlash: 0, screenShake: 0, healPulse: 0, castPulse: 0, parryFlash: 0,
+    stinger: 0, stingerName: "", stingerSub: "",
+    runStart: 0, damageDealt: 0, damageTaken: 0, killsThisRun: 0,
+    profile: null as unknown as Profile, // set on start
   });
 
   const s = stateRef.current;
@@ -200,6 +221,8 @@ export default function EldenGame() {
 
   const startRun = useCallback((clsId: ClassId) => {
     const cls = CLASSES.find(c => c.id === clsId)!;
+    const prof = loadProfile();
+    s.profile = prof;
     s.cls = cls;
     s.stats = { ...cls.stats };
     s.level = 1;
@@ -211,22 +234,32 @@ export default function EldenGame() {
     s.inventory = [];
     s.learned = new Set();
     s.boons = new Set();
-    s.materials = { smithing_stone: 2, somber_stone: 0, glintstone_shard: 0, sacred_tear: 0, rune_arc: 0 };
+    s.materials = {
+      smithing_stone: 2 + prof.hub.startingStones, somber_stone: 0,
+      glintstone_shard: 0, sacred_tear: 0, rune_arc: 0,
+    };
     s.chosenSpell = null;
     s.depth = 1;
     s.roomsCleared = 0;
     s.bossesKilled = 0;
     s.projectiles = [];
     s.particles = [];
+    s.damageNums = [];
+    s.weather = [];
+    s.biome = biomeForDepth(1);
+    s.visitedRooms = [{ x: 0, y: 0, cleared: false, isBoss: false, isGrace: false, isCurrent: true }];
+    s.mapPos = { x: 0, y: 0 };
+    s.runStart = performance.now();
+    s.damageDealt = 0; s.damageTaken = 0; s.killsThisRun = 0;
     s.room = makeRoom((Date.now() ^ (cls.id.length * 9973)) & 0xffff, 1);
     const mm = defaultMods();
-    const maxHp = Math.round((60 + s.stats.vig * 10) * mm.hpMul);
-    const maxSt = Math.round((80 + s.stats.end * 5) * mm.staminaMul);
-    const maxFp = Math.round((40 + Math.max(s.stats.int, s.stats.fth) * 6) * mm.fpMul);
+    const maxHp = Math.round((60 + s.stats.vig * 10) * mm.hpMul) + prof.hub.hpBonus;
+    const maxSt = Math.round((80 + s.stats.end * 5) * mm.staminaMul) + prof.hub.staminaBonus;
+    const maxFp = Math.round((40 + Math.max(s.stats.int, s.stats.fth) * 6) * mm.fpMul) + prof.hub.fpBonus;
     s.player = {
       pos: { x: W / 2, y: H / 2 },
       hp: maxHp, maxHp, stamina: maxSt, maxStamina: maxSt, fp: maxFp, maxFp,
-      runes: 0, sp: 0,
+      runes: prof.hub.startingRunes, sp: 0,
       atkCd: 0, spellCd: 0, dashCd: 0, invuln: 60,
       facing: { x: 1, y: 0 }, swing: 0, ability: 0,
       bleed: { stacks: 0, timer: 0 }, burn: { stacks: 0, timer: 0 },
@@ -393,21 +426,39 @@ export default function EldenGame() {
       if (s.roomsCleared > 0 && s.roomsCleared % 4 === 0 && s.bossesKilled < BOSS_SEQUENCE.length) {
         bossKind = BOSS_SEQUENCE[s.bossesKilled];
       }
+      const prevDepth = s.depth;
       s.depth = Math.floor(s.roomsCleared / 3) + 1;
+      const newBiome = biomeForDepth(s.depth);
+      const biomeChanged = newBiome.id !== s.biome.id;
+      s.biome = newBiome;
+      if (biomeChanged) {
+        s.weather = [];
+        startMusic(newBiome.music);
+        showMsg(newBiome.name, newBiome.epithet, 200);
+        if (s.profile && !s.profile.seenBiomes.includes(newBiome.id)) {
+          s.profile.seenBiomes.push(newBiome.id);
+          saveProfile(s.profile);
+        }
+      }
       s.room = makeRoom((s.room.seed * 7919 + s.roomsCleared) & 0xffff, s.depth, bossKind);
       s.projectiles = [];
-      if (dir === "n") s.player.pos = { x: W / 2, y: H - 80 };
-      if (dir === "s") s.player.pos = { x: W / 2, y: 80 };
-      if (dir === "e") s.player.pos = { x: 80, y: H / 2 };
-      if (dir === "w") s.player.pos = { x: W - 80, y: H / 2 };
+      if (dir === "n") { s.mapPos = { x: s.mapPos.x, y: s.mapPos.y - 1 }; s.player.pos = { x: W / 2, y: H - 80 }; }
+      if (dir === "s") { s.mapPos = { x: s.mapPos.x, y: s.mapPos.y + 1 }; s.player.pos = { x: W / 2, y: 80 }; }
+      if (dir === "e") { s.mapPos = { x: s.mapPos.x + 1, y: s.mapPos.y }; s.player.pos = { x: 80, y: H / 2 }; }
+      if (dir === "w") { s.mapPos = { x: s.mapPos.x - 1, y: s.mapPos.y }; s.player.pos = { x: W - 80, y: H / 2 }; }
+      for (const v of s.visitedRooms) v.isCurrent = false;
+      s.visitedRooms.push({ x: s.mapPos.x, y: s.mapPos.y, cleared: false, isBoss: !!bossKind, isGrace: !!s.room.grace, isCurrent: true });
       if (bossKind) {
         const d = ENEMY_DEFS[bossKind];
         showMsg(d.name, d.desc ?? "", 240);
         s.screenShake = 30;
         sfx("boss_intro");
-      } else {
+        bossStinger();
+        startMusic("boss");
+      } else if (!biomeChanged) {
         showMsg(`Depth ${s.depth}`, "", 90);
       }
+      void prevDepth;
     };
 
     const canvasRect = () => canvas.getBoundingClientRect();
@@ -792,17 +843,23 @@ export default function EldenGame() {
         const def = ENEMY_DEFS[e.kind];
         p.runes += def.runes;
         spawnParticles(e.pos, "oklch(0.82 0.13 85)", def.isBoss ? 60 : 18, def.isBoss ? 7 : 5);
+        spawnDamage(s.damageNums, e.pos.x, e.pos.y - 20, def.runes, "heal");
+        s.killsThisRun++;
+        if (s.profile) {
+          recordKill(s.profile, e.kind);
+          if (!s.profile.seenBiomes.includes(s.biome.id)) s.profile.seenBiomes.push(s.biome.id);
+        }
         if (def.isBoss) {
           s.bossesKilled++;
           s.screenShake = 26;
           sfx("boss_die");
           const bossKind = e.kind;
+          if (s.profile) recordBossKill(s.profile, bossKind);
           showMsg("GREAT ENEMY FELLED", def.name, 260);
           setTimeout(() => openBossChest(bossKind), 800);
           if (s.bossesKilled >= 6) setTimeout(() => { sfx("victory"); setScreen("victory"); }, 2200);
         } else {
           sfx("enemy_die");
-          // small material drop chance from regular enemies
           if (Math.random() < 0.18) {
             s.materials.smithing_stone += 1;
             spawnParticles(e.pos, "oklch(0.7 0.02 70)", 8, 4);
@@ -810,7 +867,11 @@ export default function EldenGame() {
         }
         return false;
       });
-      if (before > 0 && s.room.enemies.length === 0 && !s.room.cleared) s.room.cleared = true;
+      if (before > 0 && s.room.enemies.length === 0 && !s.room.cleared) {
+        s.room.cleared = true;
+        const cur = s.visitedRooms.find(v => v.isCurrent);
+        if (cur) cur.cleared = true;
+      }
 
       // chest interact
       if (s.room.chest && !s.room.chest.opened) {
@@ -842,6 +903,11 @@ export default function EldenGame() {
       }
       s.particles = s.particles.filter(pt => pt.life > 0);
 
+      // weather + damage numbers
+      spawnWeather(s.weather, s.biome, W, H);
+      stepWeather(s.weather, dt, W, H);
+      stepDamage(s.damageNums, dt);
+
       // transitions
       if (s.room.cleared) {
         if (p.pos.y < 55 && s.room.doors.n) nextRoom("n");
@@ -850,7 +916,17 @@ export default function EldenGame() {
         else if (p.pos.x < 55 && s.room.doors.w) nextRoom("w");
       }
 
-      if (p.hp <= 0) { sfx("death"); setScreen("dead"); }
+      if (p.hp <= 0) {
+        sfx("death");
+        if (s.profile) {
+          s.profile.deaths += 1;
+          s.profile.lostRunes += Math.floor(p.runes * 0.5);
+          s.profile.bestDepth = Math.max(s.profile.bestDepth, s.depth);
+          s.profile.totalPlaytimeMs += performance.now() - s.runStart;
+          saveProfile(s.profile);
+        }
+        setScreen("dead");
+      }
 
       s.hitFlash = Math.max(0, s.hitFlash - dt);
       s.screenShake = Math.max(0, s.screenShake - dt);
@@ -1172,34 +1248,44 @@ function renderFrame(ctx: CanvasRenderingContext2D, now: number, s: unknown) {
     player: { pos: Vec; facing: Vec; swing: number; ability: number; buffTimer: number; invuln: number };
     equipped: { weapon: InvItem | null; armor: InvItem | null; talisman: InvItem | null };
     cls: ClassDef;
+    biome: Biome; weather: WeatherParticle[]; damageNums: DmgNumber[];
+    visitedRooms: { x: number; y: number; cleared: boolean; isBoss: boolean; isGrace: boolean; isCurrent: boolean }[];
+    mapPos: { x: number; y: number };
+    depth: number; roomsCleared: number; bossesKilled: number;
   };
+  const biome = st.biome ?? BIOMES[0];
   // floor
-  ctx.fillStyle = "oklch(0.11 0.008 60)";
+  ctx.fillStyle = biome.floor;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "oklch(0.17 0.01 60 / 0.55)"; ctx.lineWidth = 1;
+  ctx.strokeStyle = biome.floorAlt + " / 0.55)".replace(")", "");
+  // simpler: use floorAlt directly at low alpha via globalAlpha
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = biome.floorAlt;
+  ctx.lineWidth = 1;
   for (let x = 0; x < W; x += TILE) {
     for (let y = 0; y < H; y += TILE) {
       ctx.strokeRect(x, y, TILE, TILE);
       if (((x * 31 + y * 17) & 15) === 0) {
-        ctx.strokeStyle = "oklch(0.14 0.01 60 / 0.7)";
         ctx.beginPath(); ctx.moveTo(x + 5, y + 8); ctx.lineTo(x + 20, y + 22); ctx.stroke();
-        ctx.strokeStyle = "oklch(0.17 0.01 60 / 0.55)";
       }
     }
   }
+  ctx.globalAlpha = 1;
   const grad = ctx.createRadialGradient(W / 2, H / 2, 120, W / 2, H / 2, W * 0.72);
   grad.addColorStop(0, "rgba(0,0,0,0)");
   grad.addColorStop(1, "rgba(0,0,0,0.82)");
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
 
   // walls
-  ctx.fillStyle = "oklch(0.18 0.015 60)";
+  ctx.fillStyle = biome.wall;
   ctx.fillRect(0, 0, W, 40); ctx.fillRect(0, H - 40, W, 40);
   ctx.fillRect(0, 0, 40, H); ctx.fillRect(W - 40, 0, 40, H);
-  ctx.strokeStyle = "oklch(0.24 0.015 60 / 0.6)";
+  ctx.strokeStyle = biome.wallHi;
+  ctx.globalAlpha = 0.55;
   for (let x = 0; x < W; x += 40) { ctx.strokeRect(x, 0, 40, 40); ctx.strokeRect(x, H - 40, 40, 40); }
   for (let y = 0; y < H; y += 40) { ctx.strokeRect(0, y, 40, 40); ctx.strokeRect(W - 40, y, 40, 40); }
-  const doorColor = st.room.cleared ? "oklch(0.72 0.19 45 / 0.85)" : "oklch(0.24 0.02 60)";
+  ctx.globalAlpha = 1;
+  const doorColor = st.room.cleared ? biome.accent : biome.wallHi;
   ctx.fillStyle = doorColor;
   if (st.room.doors.n) ctx.fillRect(W / 2 - 46, 0, 92, 40);
   if (st.room.doors.s) ctx.fillRect(W / 2 - 46, H - 40, 92, 40);
@@ -1305,6 +1391,35 @@ function renderFrame(ctx: CanvasRenderingContext2D, now: number, s: unknown) {
     ctx.shadowColor = "oklch(0.72 0.19 45)"; ctx.shadowBlur = 8;
     ctx.fillText(def.name, W / 2, by - 8);
     ctx.shadowBlur = 0;
+  }
+
+  // weather overlay
+  if (st.weather && st.weather.length) renderWeather(ctx, st.weather, biome.weatherColor);
+
+  // damage numbers
+  if (st.damageNums && st.damageNums.length) renderDamage(ctx, st.damageNums);
+
+  // minimap (top-right)
+  if (st.visitedRooms && st.visitedRooms.length) {
+    const mmX = W - 150, mmY = 12, cell = 12, gap = 2;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(mmX - 6, mmY - 6, 140, 96);
+    ctx.strokeStyle = biome.accent; ctx.globalAlpha = 0.6;
+    ctx.strokeRect(mmX - 6, mmY - 6, 140, 96);
+    ctx.globalAlpha = 1;
+    const cx = mmX + 64, cy = mmY + 40;
+    for (const v of st.visitedRooms) {
+      const rx = cx + v.x * (cell + gap) - cell / 2;
+      const ry = cy + v.y * (cell + gap) - cell / 2;
+      ctx.fillStyle = v.isCurrent ? biome.accent
+        : v.isBoss ? "oklch(0.55 0.22 25)"
+        : v.isGrace ? "oklch(0.85 0.15 70)"
+        : v.cleared ? "oklch(0.35 0.03 60)" : "oklch(0.22 0.02 60)";
+      ctx.fillRect(rx, ry, cell, cell);
+    }
+    ctx.fillStyle = "oklch(0.82 0.03 70)";
+    ctx.font = "10px 'Cinzel', serif"; ctx.textAlign = "left";
+    ctx.fillText(biome.name, mmX - 2, mmY + 84);
   }
 }
 
