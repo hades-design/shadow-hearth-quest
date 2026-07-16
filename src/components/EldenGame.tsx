@@ -8,6 +8,17 @@ import {
   BOSS_LOOT, BOONS, Boon,
 } from "@/lib/gameData";
 import { sfx, setMuted, isMuted, unlockAudio } from "@/lib/audio";
+import {
+  loadProfile, saveProfile, recordKill, recordBossKill, tutorialSeen, markTutorialSeen,
+  HUB_UPGRADES, hubCost, purchaseHub, type Profile, type HubUpgradeId,
+} from "@/lib/save";
+import { BESTIARY } from "@/lib/bestiary";
+import {
+  BIOMES, biomeForDepth, spawnWeather, stepWeather, renderWeather,
+  type Biome, type WeatherParticle,
+} from "@/lib/biomes";
+import { spawnDamage, stepDamage, renderDamage, type DmgNumber, type DmgKind } from "@/lib/damageNumbers";
+import { startMusic, stopMusic, setMusicVolume, bossStinger } from "@/lib/music";
 
 // ============================================================================
 // Types & constants
