@@ -889,7 +889,17 @@ export default function EldenGame() {
         else if (p.pos.x < 55 && s.room.doors.w) nextRoom("w");
       }
 
-      if (p.hp <= 0) { sfx("death"); setScreen("dead"); }
+      if (p.hp <= 0) {
+        sfx("death");
+        if (s.profile) {
+          s.profile.deaths += 1;
+          s.profile.lostRunes += Math.floor(p.runes * 0.5);
+          s.profile.bestDepth = Math.max(s.profile.bestDepth, s.depth);
+          s.profile.totalPlaytimeMs += performance.now() - s.runStart;
+          saveProfile(s.profile);
+        }
+        setScreen("dead");
+      }
 
       s.hitFlash = Math.max(0, s.hitFlash - dt);
       s.screenShake = Math.max(0, s.screenShake - dt);
