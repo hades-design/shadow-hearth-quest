@@ -825,17 +825,23 @@ export default function EldenGame() {
         const def = ENEMY_DEFS[e.kind];
         p.runes += def.runes;
         spawnParticles(e.pos, "oklch(0.82 0.13 85)", def.isBoss ? 60 : 18, def.isBoss ? 7 : 5);
+        spawnDamage(s.damageNums, e.pos.x, e.pos.y - 20, def.runes, "heal");
+        s.killsThisRun++;
+        if (s.profile) {
+          recordKill(s.profile, e.kind);
+          if (!s.profile.seenBiomes.includes(s.biome.id)) s.profile.seenBiomes.push(s.biome.id);
+        }
         if (def.isBoss) {
           s.bossesKilled++;
           s.screenShake = 26;
           sfx("boss_die");
           const bossKind = e.kind;
+          if (s.profile) recordBossKill(s.profile, bossKind);
           showMsg("GREAT ENEMY FELLED", def.name, 260);
           setTimeout(() => openBossChest(bossKind), 800);
           if (s.bossesKilled >= 6) setTimeout(() => { sfx("victory"); setScreen("victory"); }, 2200);
         } else {
           sfx("enemy_die");
-          // small material drop chance from regular enemies
           if (Math.random() < 0.18) {
             s.materials.smithing_stone += 1;
             spawnParticles(e.pos, "oklch(0.7 0.02 70)", 8, 4);
