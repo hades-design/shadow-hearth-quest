@@ -1392,6 +1392,35 @@ function renderFrame(ctx: CanvasRenderingContext2D, now: number, s: unknown) {
     ctx.fillText(def.name, W / 2, by - 8);
     ctx.shadowBlur = 0;
   }
+
+  // weather overlay
+  if (st.weather && st.weather.length) renderWeather(ctx, st.weather, biome.weatherColor);
+
+  // damage numbers
+  if (st.damageNums && st.damageNums.length) renderDamage(ctx, st.damageNums);
+
+  // minimap (top-right)
+  if (st.visitedRooms && st.visitedRooms.length) {
+    const mmX = W - 150, mmY = 12, cell = 12, gap = 2;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(mmX - 6, mmY - 6, 140, 96);
+    ctx.strokeStyle = biome.accent; ctx.globalAlpha = 0.6;
+    ctx.strokeRect(mmX - 6, mmY - 6, 140, 96);
+    ctx.globalAlpha = 1;
+    const cx = mmX + 64, cy = mmY + 40;
+    for (const v of st.visitedRooms) {
+      const rx = cx + v.x * (cell + gap) - cell / 2;
+      const ry = cy + v.y * (cell + gap) - cell / 2;
+      ctx.fillStyle = v.isCurrent ? biome.accent
+        : v.isBoss ? "oklch(0.55 0.22 25)"
+        : v.isGrace ? "oklch(0.85 0.15 70)"
+        : v.cleared ? "oklch(0.35 0.03 60)" : "oklch(0.22 0.02 60)";
+      ctx.fillRect(rx, ry, cell, cell);
+    }
+    ctx.fillStyle = "oklch(0.82 0.03 70)";
+    ctx.font = "10px 'Cinzel', serif"; ctx.textAlign = "left";
+    ctx.fillText(biome.name, mmX - 2, mmY + 84);
+  }
 }
 
 function drawDecor(ctx: CanvasRenderingContext2D, d: { x: number; y: number; kind: string }, now: number) {
