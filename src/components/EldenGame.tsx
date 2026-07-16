@@ -145,12 +145,14 @@ const SPELL_TO_KIND: Record<string, Projectile["kind"]> = {
 export default function EldenGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [, setTick] = useState(0);
-  const [screen, setScreen] = useState<"title" | "class" | "play" | "dead" | "victory">("title");
-  const [panel, setPanel] = useState<"none" | "inventory" | "skills" | "smith">("none");
+  const [screen, setScreen] = useState<"title" | "class" | "play" | "dead" | "victory" | "hub">("title");
+  const [panel, setPanel] = useState<"none" | "inventory" | "skills" | "smith" | "pause" | "codex">("none");
   const [selectedClass, setSelectedClass] = useState<ClassId>("vagabond");
   const [hoverSkill, setHoverSkill] = useState<string | null>(null);
   const [muted, setMutedState] = useState(false);
   const [boonChoice, setBoonChoice] = useState<BoonChoice>(null);
+  const [profile, setProfile] = useState<Profile>(() => loadProfile());
+  const [tutorial, setTutorial] = useState<{ id: string; title: string; body: string } | null>(null);
 
   const stateRef = useRef({
     cls: CLASSES[0] as ClassDef,
@@ -176,10 +178,18 @@ export default function EldenGame() {
     depth: 1, roomsCleared: 0, bossesKilled: 0,
     projectiles: [] as Projectile[],
     particles: [] as Particle[],
+    damageNums: [] as DmgNumber[],
+    weather: [] as WeatherParticle[],
+    biome: BIOMES[0] as Biome,
+    visitedRooms: [] as { x: number; y: number; cleared: boolean; isBoss: boolean; isGrace: boolean; isCurrent: boolean }[],
+    mapPos: { x: 0, y: 0 },
     keys: {} as Record<string, boolean>,
     mouse: { x: W / 2, y: H / 2, down: false, downEdge: false, rightDown: false, rightEdge: false },
     message: "", messageTime: 0, subtitle: "", subtitleTime: 0,
     hitFlash: 0, screenShake: 0, healPulse: 0, castPulse: 0, parryFlash: 0,
+    stinger: 0, stingerName: "", stingerSub: "",
+    runStart: 0, damageDealt: 0, damageTaken: 0, killsThisRun: 0,
+    profile: null as unknown as Profile, // set on start
   });
 
   const s = stateRef.current;
