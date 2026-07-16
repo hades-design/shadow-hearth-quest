@@ -426,21 +426,39 @@ export default function EldenGame() {
       if (s.roomsCleared > 0 && s.roomsCleared % 4 === 0 && s.bossesKilled < BOSS_SEQUENCE.length) {
         bossKind = BOSS_SEQUENCE[s.bossesKilled];
       }
+      const prevDepth = s.depth;
       s.depth = Math.floor(s.roomsCleared / 3) + 1;
+      const newBiome = biomeForDepth(s.depth);
+      const biomeChanged = newBiome.id !== s.biome.id;
+      s.biome = newBiome;
+      if (biomeChanged) {
+        s.weather = [];
+        startMusic(newBiome.music);
+        showMsg(newBiome.name, newBiome.epithet, 200);
+        if (s.profile && !s.profile.seenBiomes.includes(newBiome.id)) {
+          s.profile.seenBiomes.push(newBiome.id);
+          saveProfile(s.profile);
+        }
+      }
       s.room = makeRoom((s.room.seed * 7919 + s.roomsCleared) & 0xffff, s.depth, bossKind);
       s.projectiles = [];
-      if (dir === "n") s.player.pos = { x: W / 2, y: H - 80 };
-      if (dir === "s") s.player.pos = { x: W / 2, y: 80 };
-      if (dir === "e") s.player.pos = { x: 80, y: H / 2 };
-      if (dir === "w") s.player.pos = { x: W - 80, y: H / 2 };
+      if (dir === "n") { s.mapPos = { x: s.mapPos.x, y: s.mapPos.y - 1 }; s.player.pos = { x: W / 2, y: H - 80 }; }
+      if (dir === "s") { s.mapPos = { x: s.mapPos.x, y: s.mapPos.y + 1 }; s.player.pos = { x: W / 2, y: 80 }; }
+      if (dir === "e") { s.mapPos = { x: s.mapPos.x + 1, y: s.mapPos.y }; s.player.pos = { x: 80, y: H / 2 }; }
+      if (dir === "w") { s.mapPos = { x: s.mapPos.x - 1, y: s.mapPos.y }; s.player.pos = { x: W - 80, y: H / 2 }; }
+      for (const v of s.visitedRooms) v.isCurrent = false;
+      s.visitedRooms.push({ x: s.mapPos.x, y: s.mapPos.y, cleared: false, isBoss: !!bossKind, isGrace: !!s.room.grace, isCurrent: true });
       if (bossKind) {
         const d = ENEMY_DEFS[bossKind];
         showMsg(d.name, d.desc ?? "", 240);
         s.screenShake = 30;
         sfx("boss_intro");
-      } else {
+        bossStinger();
+        startMusic("boss");
+      } else if (!biomeChanged) {
         showMsg(`Depth ${s.depth}`, "", 90);
       }
+      void prevDepth;
     };
 
     const canvasRect = () => canvas.getBoundingClientRect();
