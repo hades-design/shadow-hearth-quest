@@ -1,6 +1,8 @@
 // Persistent profile for Elden Hollow (localStorage-backed).
 // Survives across runs and browser sessions. Versioned so we can migrate later.
 
+import type { ClassId, EnemyKind } from "@/lib/gameData";
+
 const KEY = "elden-hollow.save.v2";
 
 export type Settings = {
@@ -21,10 +23,10 @@ export type Profile = {
   runsCompleted: number;
   bestDepth: number;
   totalPlaytimeMs: number;
-  killedBosses: string[];         // EnemyKind[]
-  bestiary: Record<string, number>; // enemyKind -> kills
+  killedBosses: EnemyKind[];
+  bestiary: Record<EnemyKind, number>; // enemyKind -> kills
   seenBiomes: string[];
-  unlockedClasses: string[];      // ClassId[]
+  unlockedClasses: ClassId[];
   boonRarityBoost: number;        // 0..1 incremental
   hub: {
     hpBonus: number;              // +HP base flat
