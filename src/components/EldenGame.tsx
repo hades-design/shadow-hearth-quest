@@ -1875,11 +1875,22 @@ function drawPlayer(ctx: CanvasRenderingContext2D, st: {
   }
   ctx.restore();
   if (p.swing > 0) {
-    ctx.strokeStyle = `oklch(0.85 0.15 85 / ${p.swing / 12})`;
-    ctx.lineWidth = 3;
+    const inv = st.equipped.weapon;
+    const enchColor = inv ? ENCH_HIT_COLOR[inv.ench] : "oklch(0.85 0.15 85)";
+    const alpha = p.swing / 12;
+    ctx.strokeStyle = enchColor.replace(")", ` / ${alpha})`);
+    ctx.lineWidth = 4;
+    ctx.shadowColor = enchColor; ctx.shadowBlur = 14;
     ctx.beginPath();
     const a0 = Math.atan2(p.facing.y, p.facing.x);
-    ctx.arc(p.pos.x, p.pos.y, 56, a0 - 0.9, a0 + 0.4);
+    ctx.arc(p.pos.x, p.pos.y, 56, a0 - 0.95, a0 + 0.45);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // secondary thin trail
+    ctx.strokeStyle = `oklch(0.95 0.05 85 / ${alpha * 0.6})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(p.pos.x, p.pos.y, 64, a0 - 0.85, a0 + 0.35);
     ctx.stroke();
   }
   if (p.ability > 0) {
