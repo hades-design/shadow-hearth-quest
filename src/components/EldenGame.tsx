@@ -7,7 +7,7 @@ import {
   Material, MATERIALS, Enchant, ENCHANTS, MAX_LEVEL, upgradeCost, levelMul,
   BOSS_LOOT, BOONS, Boon,
 } from "@/lib/gameData";
-import { sfx, setMuted, isMuted, unlockAudio } from "@/lib/audio";
+import { sfx, setMuted, isMuted, unlockAudio, setSfxVolume } from "@/lib/audio";
 import {
   loadProfile, saveProfile, recordKill, recordBossKill, tutorialSeen, markTutorialSeen,
   HUB_UPGRADES, hubCost, purchaseHub, type Profile, type HubUpgradeId,
@@ -19,6 +19,10 @@ import {
 } from "@/lib/biomes";
 import { spawnDamage, stepDamage, renderDamage, type DmgNumber, type DmgKind } from "@/lib/damageNumbers";
 import { startMusic, stopMusic, setMusicVolume, bossStinger } from "@/lib/music";
+import HubPanel from "@/components/HubPanel";
+import CodexPanel from "@/components/CodexPanel";
+import PausePanel from "@/components/PausePanel";
+import TutorialToast from "@/components/TutorialToast";
 
 // ============================================================================
 // Types & constants
@@ -271,6 +275,8 @@ export default function EldenGame() {
     setBoonChoice(null);
     setPanel("none");
     setScreen("play");
+    setMusicVolume(prof.settings.musicVol);
+    setSfxVolume(prof.settings.sfxVol);
     unlockAudio();
     sfx("menu");
   }, [s]);
@@ -289,15 +295,37 @@ export default function EldenGame() {
     p.maxFp = maxFp; p.fp = Math.min(maxFp, maxFp * rFp);
   }, [effStats, mods, screen, s]);
 
+  // Audio lifecycle: stop music when leaving play; apply volumes from profile
+  useEffect(() => {
+    if (screen === "play") {
+      const prof = loadProfile();
+      setMusicVolume(prof.settings.musicVol);
+      setSfxVolume(prof.settings.sfxVol);
+      if (!isMuted()) startMusic(s.biome.music);
+    } else {
+      stopMusic();
+    }
+  }, [screen, s.biome.music]);
+
   useEffect(() => {
     const kd = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       s.keys[k] = true;
       if (screen === "play") {
-        if (k === "i") { setPanel(p => p === "inventory" ? "none" : "inventory"); sfx("menu"); }
-        if (k === "k") { setPanel(p => p === "skills" ? "none" : "skills"); sfx("menu"); }
-        if (k === "u") { setPanel(p => p === "smith" ? "none" : "smith"); sfx("menu"); }
-        if (k === "escape") { setPanel("none"); setBoonChoice(null); }
+        const binds = profile.settings.binds;
+        if (k === binds.inventory) { setPanel(p => p === "inventory" ? "none" : "inventory"); sfx("menu"); }
+        if (k === binds.skills) { setPanel(p => p === "skills" ? "none" : "skills"); sfx("menu"); }
+        if (k === binds.smith) { setPanel(p => p === "smith" ? "none" : "smith"); sfx("menu"); }
+        if (k === binds.codex) { setPanel(p => p === "codex" ? "none" : "codex"); sfx("menu"); }
+        if (k === binds.pause) {
+          setPanel(p => {
+            if (p === "pause") return "none";
+            if (p !== "none") return "pause";
+            return "pause";
+          });
+          sfx("menu");
+        }
+        if (k === "escape" && panel !== "pause") { setPanel("none"); setBoonChoice(null); }
         if (k === "m") { const nm = !isMuted(); setMuted(nm); setMutedState(nm); }
       }
       if (k === " ") e.preventDefault();
@@ -306,7 +334,7 @@ export default function EldenGame() {
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
-  }, [s, screen]);
+  }, [s, screen, panel, profile.settings.binds]);
 
   // Boon choice actions ----------------------------------------------------
   const applyBoonChoice = useCallback((opt: BoonChoiceItem) => {
@@ -418,6 +446,12 @@ export default function EldenGame() {
 
     const showMsg = (t: string, sub = "", frames = 180) => {
       s.message = t; s.subtitle = sub; s.messageTime = frames; s.subtitleTime = frames;
+    };
+
+    const queueTutorial = (id: string, title: string, body: string) => {
+      if (s.profile && !tutorialSeen(s.profile, id) && !tutorial) {
+        setTutorial({ id, title, body });
+      }
     };
 
     const nextRoom = (dir: "n" | "s" | "e" | "w") => {
@@ -558,6 +592,23 @@ export default function EldenGame() {
           spawnParticles(p.pos, "oklch(0.75 0.19 45)", 4);
           p.burn.stacks--; p.burn.timer = 40;
         }
+      }
+
+      // contextual tutorials
+      if (s.roomsCleared === 0 && s.depth === 1) {
+        queueTutorial("move", "Walk, Tarnished", "WASD or Arrow Keys to move. Face enemies with your mouse.");
+      }
+      if (s.room.enemies.length > 0 && s.roomsCleared === 0) {
+        queueTutorial("attack", "Strike True", "Left-click to swing. Stamina recharges quickly — don't let it empty.");
+      }
+      if (s.room.chest && !s.room.chest.opened) {
+        queueTutorial("chest", "A Keepsake", "Press E near a chest to open it and claim its contents.");
+      }
+      if (s.room.grace && s.keys["e"]) {
+        queueTutorial("grace", "Site of Lost Grace", "Rest at a Site of Grace to fully restore HP, FP and flasks.");
+      }
+      if (p.sp >= 1) {
+        queueTutorial("skills", "The Skill Tree", "Press K to spend Skill Points earned from Lords.");
       }
 
       // melee
@@ -857,7 +908,19 @@ export default function EldenGame() {
           if (s.profile) recordBossKill(s.profile, bossKind);
           showMsg("GREAT ENEMY FELLED", def.name, 260);
           setTimeout(() => openBossChest(bossKind), 800);
-          if (s.bossesKilled >= 6) setTimeout(() => { sfx("victory"); setScreen("victory"); }, 2200);
+          if (s.bossesKilled >= 6) setTimeout(() => {
+            sfx("victory");
+            if (s.profile) {
+              s.profile.runsCompleted += 1;
+              s.profile.lostRunes += Math.floor(p.runes * 0.5);
+              s.profile.bestDepth = Math.max(s.profile.bestDepth, s.depth);
+              s.profile.totalPlaytimeMs += performance.now() - s.runStart;
+              saveProfile(s.profile);
+              setProfile({ ...s.profile });
+            }
+            stopMusic();
+            setScreen("victory");
+          }, 2200);
         } else {
           sfx("enemy_die");
           if (Math.random() < 0.18) {
@@ -924,7 +987,9 @@ export default function EldenGame() {
           s.profile.bestDepth = Math.max(s.profile.bestDepth, s.depth);
           s.profile.totalPlaytimeMs += performance.now() - s.runStart;
           saveProfile(s.profile);
+          setProfile({ ...s.profile });
         }
+        stopMusic();
         setScreen("dead");
       }
 
@@ -1139,16 +1204,22 @@ export default function EldenGame() {
         />
 
         {screen === "title" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm text-center px-6">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm text-center px-6">
             <h2 className="font-display text-3xl md:text-5xl text-gold-glow mb-3 tracking-[0.3em]">RISE, TARNISHED</h2>
             <p className="italic text-muted-foreground max-w-xl mb-8">
               The Lands Between crumble beneath a shattered ring. Six Great Enemies bar the road to lordship —
               Grafted Scions, Crucible Knights, Margit, Godrick, Malenia, and the Starscourge himself. Choose a keepsake and descend.
             </p>
-            <button onClick={() => { unlockAudio(); sfx("menu"); setScreen("class"); }}
-              className="font-display tracking-[0.35em] text-sm px-10 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
-              ◆ CHOOSE YOUR CLASS ◆
-            </button>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <button type="button" onClick={() => { unlockAudio(); sfx("menu"); setScreen("class"); }}
+                className="font-display tracking-[0.35em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
+                ◆ CHOOSE CLASS ◆
+              </button>
+              <button type="button" onClick={() => { unlockAudio(); sfx("menu"); setScreen("hub"); }}
+                className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
+                ▣ ROUNDHOLD ▣
+              </button>
+            </div>
             <div className="mt-10 grid grid-cols-[auto_auto] gap-x-8 gap-y-1 text-xs font-display tracking-widest text-muted-foreground">
               <div>WASD / ARROWS</div><div className="text-left">MOVE</div>
               <div>LEFT CLICK</div><div className="text-left">WEAPON ATTACK</div>
@@ -1156,8 +1227,8 @@ export default function EldenGame() {
               <div>RIGHT CLICK / Q</div><div className="text-left">CLASS ABILITY</div>
               <div>SHIFT</div><div className="text-left">DODGE ROLL</div>
               <div>E</div><div className="text-left">INTERACT (chests / graces)</div>
-              <div>I / K / U</div><div className="text-left">INVENTORY · SKILLS · SMITH</div>
-              <div>M</div><div className="text-left">MUTE AUDIO</div>
+              <div>I / K / U / J</div><div className="text-left">INV · SKILLS · SMITH · CODEX</div>
+              <div>M / ESC</div><div className="text-left">MUTE / PAUSE</div>
             </div>
           </div>
         )}
@@ -1168,6 +1239,7 @@ export default function EldenGame() {
             onSelect={setSelectedClass}
             onStart={() => startRun(selectedClass)}
             onBack={() => setScreen("title")}
+            unlocked={profile.unlockedClasses}
           />
         )}
 
@@ -1176,9 +1248,10 @@ export default function EldenGame() {
             <h2 className="font-display text-6xl md:text-7xl mb-4 tracking-[0.3em]" style={{ color: "oklch(0.55 0.22 25)", textShadow: "0 0 26px oklch(0.4 0.2 25)" }}>YOU DIED</h2>
             <p className="italic text-muted-foreground mb-2">Reached depth {s.depth} · felled {s.bossesKilled} of 6 Lords</p>
             <p className="italic text-[color:var(--gold)]/70 mb-6 max-w-md">"The flame of ambition ever flickers, Tarnished..."</p>
-            <div className="flex gap-3">
-              <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ NEW CLASS ◆</button>
-              <button onClick={() => startRun(s.cls.id)} className="font-display tracking-[0.3em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ RETURN TO GRACE ◆</button>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ NEW CLASS ◆</button>
+              <button onClick={() => startRun(s.cls.id)} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ RETURN TO GRACE ◆</button>
+              <button onClick={() => setScreen("hub")} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10">▣ ROUNDHOLD ▣</button>
             </div>
           </div>
         )}
@@ -1189,8 +1262,29 @@ export default function EldenGame() {
             <p className="italic text-muted-foreground max-w-xl mb-6">
               Six Great Runes reclaimed. The shattered ring mends beneath your grasp. The age of the Tarnished begins.
             </p>
-            <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-10 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ BEGIN NEW JOURNEY ◆</button>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ BEGIN NEW JOURNEY ◆</button>
+              <button onClick={() => setScreen("hub")} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10">▣ ROUNDHOLD ▣</button>
+            </div>
           </div>
+        )}
+
+        {screen === "hub" && (
+          <HubPanel
+            profile={profile}
+            onPurchase={(id) => {
+              const next = { ...profile };
+              if (purchaseHub(next, id)) {
+                setProfile(next);
+                saveProfile(next);
+                sfx("upgrade");
+              } else {
+                sfx("menu");
+              }
+            }}
+            onClose={() => setScreen("title")}
+            onStartRun={() => setScreen("class")}
+          />
         )}
 
         {screen === "play" && panel === "inventory" && (
@@ -1215,8 +1309,35 @@ export default function EldenGame() {
             onClose={() => setPanel("none")}
           />
         )}
+        {screen === "play" && panel === "codex" && (
+          <CodexPanel bestiary={profile.bestiary} killedBosses={profile.killedBosses} onClose={() => setPanel("none")} />
+        )}
+        {screen === "play" && panel === "pause" && (
+          <PausePanel
+            settings={profile.settings}
+            onSettingsChange={(settings) => {
+              const next = { ...profile, settings };
+              setProfile(next);
+              saveProfile(next);
+              setMusicVolume(settings.musicVol);
+              setSfxVolume(settings.sfxVol);
+              setMuted(settings.sfxVol === 0 && settings.musicVol === 0);
+              setMutedState(settings.sfxVol === 0 && settings.musicVol === 0);
+            }}
+            onResume={() => setPanel("none")}
+            onQuit={() => { stopMusic(); setScreen("title"); setPanel("none"); }}
+          />
+        )}
         {screen === "play" && boonChoice && (
           <BoonChoicePanel choice={boonChoice} onPick={applyBoonChoice} />
+        )}
+
+        {screen === "play" && tutorial && (
+          <TutorialToast
+            title={tutorial.title}
+            body={tutorial.body}
+            onClose={() => { setTutorial(null); if (s.profile) markTutorialSeen(s.profile, tutorial.id); }}
+          />
         )}
       </div>
 
@@ -1392,6 +1513,26 @@ function renderFrame(ctx: CanvasRenderingContext2D, now: number, s: unknown) {
     ctx.fillText(def.name, W / 2, by - 8);
     ctx.shadowBlur = 0;
   }
+
+  // dynamic lighting overlay: radial mask around player + grace glow
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  const light = ctx.createRadialGradient(
+    st.player.pos.x, st.player.pos.y, 90,
+    st.player.pos.x, st.player.pos.y, 420
+  );
+  light.addColorStop(0, "rgba(0,0,0,0)");
+  light.addColorStop(0.55, "rgba(0,0,0,0.45)");
+  light.addColorStop(1, biome.fog.replace(")", " / 0.92)"));
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 0, W, H);
+  if (st.room.grace) {
+    const g = ctx.createRadialGradient(st.room.grace.x, st.room.grace.y, 10, st.room.grace.x, st.room.grace.y, 110);
+    g.addColorStop(0, "oklch(0.85 0.14 70 / 0.35)");
+    g.addColorStop(1, "oklch(0.85 0.14 70 / 0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
 
   // weather overlay
   if (st.weather && st.weather.length) renderWeather(ctx, st.weather, biome.weatherColor);
@@ -1636,20 +1777,33 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, now: number) {
 
   if (!def.isBoss) {
     const w = sz * 2;
+    const barY = e.pos.y - sz - 12;
     ctx.fillStyle = "oklch(0.2 0.01 60)";
-    ctx.fillRect(e.pos.x - w / 2, e.pos.y - sz - 10, w, 3);
+    ctx.fillRect(e.pos.x - w / 2, barY, w, 4);
     ctx.fillStyle = "oklch(0.55 0.2 25)";
-    ctx.fillRect(e.pos.x - w / 2, e.pos.y - sz - 10, w * (e.hp / e.maxHp), 3);
+    ctx.fillRect(e.pos.x - w / 2, barY, w * (e.hp / e.maxHp), 4);
+    // status effect bar under HP
+    const statuses = [] as { color: string; pct: number }[];
+    if (e.bleed.stacks > 0) statuses.push({ color: "oklch(0.45 0.22 25)", pct: Math.min(1, e.bleed.stacks / 6) });
+    if (e.burn.stacks > 0) statuses.push({ color: "oklch(0.75 0.19 45)", pct: Math.min(1, e.burn.stacks / 5) });
+    if (e.frozen > 0) statuses.push({ color: "oklch(0.65 0.18 220)", pct: Math.min(1, e.frozen / 120) });
+    if (statuses.length) {
+      const segW = w / statuses.length;
+      statuses.forEach((st, i) => {
+        ctx.fillStyle = st.color;
+        ctx.fillRect(e.pos.x - w / 2 + segW * i, barY + 5, segW * st.pct - 1, 2);
+      });
+    }
   }
   if (e.bleed.stacks > 0) {
     ctx.fillStyle = "oklch(0.5 0.2 25)";
     ctx.font = "10px serif"; ctx.textAlign = "center";
-    ctx.fillText(`❥${e.bleed.stacks}`, e.pos.x - 8, e.pos.y - sz - 14);
+    ctx.fillText(`❥${e.bleed.stacks}`, e.pos.x - 10, e.pos.y - sz - 16);
   }
   if (e.burn.stacks > 0) {
     ctx.fillStyle = "oklch(0.8 0.19 45)";
     ctx.font = "10px serif"; ctx.textAlign = "center";
-    ctx.fillText(`❋${e.burn.stacks}`, e.pos.x + 8, e.pos.y - sz - 14);
+    ctx.fillText(`❋${e.burn.stacks}`, e.pos.x + 10, e.pos.y - sz - 16);
   }
 }
 
@@ -1722,11 +1876,22 @@ function drawPlayer(ctx: CanvasRenderingContext2D, st: {
   }
   ctx.restore();
   if (p.swing > 0) {
-    ctx.strokeStyle = `oklch(0.85 0.15 85 / ${p.swing / 12})`;
-    ctx.lineWidth = 3;
+    const inv = st.equipped.weapon;
+    const enchColor = inv ? ENCH_HIT_COLOR[inv.ench] : "oklch(0.85 0.15 85)";
+    const alpha = p.swing / 12;
+    ctx.strokeStyle = enchColor.replace(")", ` / ${alpha})`);
+    ctx.lineWidth = 4;
+    ctx.shadowColor = enchColor; ctx.shadowBlur = 14;
     ctx.beginPath();
     const a0 = Math.atan2(p.facing.y, p.facing.x);
-    ctx.arc(p.pos.x, p.pos.y, 56, a0 - 0.9, a0 + 0.4);
+    ctx.arc(p.pos.x, p.pos.y, 56, a0 - 0.95, a0 + 0.45);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // secondary thin trail
+    ctx.strokeStyle = `oklch(0.95 0.05 85 / ${alpha * 0.6})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(p.pos.x, p.pos.y, 64, a0 - 0.85, a0 + 0.35);
     ctx.stroke();
   }
   if (p.ability > 0) {
@@ -1779,29 +1944,36 @@ function AbilitySlot({ label, hint, cd, icon, cost, fp, accent }: { label: strin
   );
 }
 
-function ClassSelect({ selected, onSelect, onStart, onBack }: {
+function ClassSelect({ selected, onSelect, onStart, onBack, unlocked }: {
   selected: ClassId; onSelect: (c: ClassId) => void; onStart: () => void; onBack: () => void;
+  unlocked: ClassId[];
 }) {
   const cls = CLASSES.find(c => c.id === selected)!;
+  const locked = (id: ClassId) => !unlocked.includes(id);
   return (
     <div className="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col p-6">
       <div className="text-center mb-3">
         <h2 className="font-display text-2xl md:text-3xl text-gold-glow tracking-[0.3em]">CHOOSE A KEEPSAKE</h2>
-        <p className="italic text-xs text-muted-foreground">Six pilgrimages await, Tarnished.</p>
+        <p className="italic text-xs text-muted-foreground">Six pilgrimages await, Tarnished. Unlock more at the Roundtable Hold.</p>
       </div>
       <div className="grid grid-cols-6 gap-2 mb-4">
-        {CLASSES.map(c => (
-          <button
-            key={c.id}
-            onClick={() => { sfx("menu"); onSelect(c.id); }}
-            className={`border transition-all p-3 flex flex-col items-center gap-1 ${selected === c.id ? "border-[color:var(--gold)] bg-[color:var(--gold)]/10" : "border-[color:var(--gold)]/25 hover:border-[color:var(--gold)]/60"}`}
-            style={{ boxShadow: selected === c.id ? `0 0 20px ${c.accent}88` : undefined }}
-          >
-            <div className="text-3xl font-display" style={{ color: c.accent, textShadow: `0 0 12px ${c.accent}` }}>{c.sigil}</div>
-            <div className="font-display text-[11px] tracking-widest text-[color:var(--gold)]/90">{c.name.toUpperCase()}</div>
-            <div className="text-[9px] italic text-muted-foreground">{c.title}</div>
-          </button>
-        ))}
+        {CLASSES.map(c => {
+          const isLocked = locked(c.id);
+          return (
+            <button
+              key={c.id}
+              disabled={isLocked}
+              onClick={() => { sfx("menu"); onSelect(c.id); }}
+              className={`border transition-all p-3 flex flex-col items-center gap-1 relative ${selected === c.id ? "border-[color:var(--gold)] bg-[color:var(--gold)]/10" : isLocked ? "border-[color:var(--gold)]/10 opacity-40" : "border-[color:var(--gold)]/25 hover:border-[color:var(--gold)]/60"}`}
+              style={{ boxShadow: selected === c.id ? `0 0 20px ${c.accent}88` : undefined }}
+            >
+              {isLocked && <div className="absolute top-1 right-1 text-[10px] text-muted-foreground">🔒</div>}
+              <div className="text-3xl font-display" style={{ color: c.accent, textShadow: `0 0 12px ${c.accent}` }}>{c.sigil}</div>
+              <div className="font-display text-[11px] tracking-widest text-[color:var(--gold)]/90">{c.name.toUpperCase()}</div>
+              <div className="text-[9px] italic text-muted-foreground">{isLocked ? "Locked" : c.title}</div>
+            </button>
+          );
+        })}
       </div>
       <div className="grid grid-cols-[1fr_1fr] gap-6 flex-1">
         <div>
