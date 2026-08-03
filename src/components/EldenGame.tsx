@@ -1513,6 +1513,26 @@ function renderFrame(ctx: CanvasRenderingContext2D, now: number, s: unknown) {
     ctx.shadowBlur = 0;
   }
 
+  // dynamic lighting overlay: radial mask around player + grace glow
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  const light = ctx.createRadialGradient(
+    st.player.pos.x, st.player.pos.y, 90,
+    st.player.pos.x, st.player.pos.y, 420
+  );
+  light.addColorStop(0, "rgba(0,0,0,0)");
+  light.addColorStop(0.55, "rgba(0,0,0,0.45)");
+  light.addColorStop(1, biome.fog.replace(")", " / 0.92)"));
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 0, W, H);
+  if (st.room.grace) {
+    const g = ctx.createRadialGradient(st.room.grace.x, st.room.grace.y, 10, st.room.grace.x, st.room.grace.y, 110);
+    g.addColorStop(0, "oklch(0.85 0.14 70 / 0.35)");
+    g.addColorStop(1, "oklch(0.85 0.14 70 / 0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+
   // weather overlay
   if (st.weather && st.weather.length) renderWeather(ctx, st.weather, biome.weatherColor);
 
