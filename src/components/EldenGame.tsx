@@ -1756,20 +1756,33 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, now: number) {
 
   if (!def.isBoss) {
     const w = sz * 2;
+    const barY = e.pos.y - sz - 12;
     ctx.fillStyle = "oklch(0.2 0.01 60)";
-    ctx.fillRect(e.pos.x - w / 2, e.pos.y - sz - 10, w, 3);
+    ctx.fillRect(e.pos.x - w / 2, barY, w, 4);
     ctx.fillStyle = "oklch(0.55 0.2 25)";
-    ctx.fillRect(e.pos.x - w / 2, e.pos.y - sz - 10, w * (e.hp / e.maxHp), 3);
+    ctx.fillRect(e.pos.x - w / 2, barY, w * (e.hp / e.maxHp), 4);
+    // status effect bar under HP
+    const statuses = [] as { color: string; pct: number }[];
+    if (e.bleed.stacks > 0) statuses.push({ color: "oklch(0.45 0.22 25)", pct: Math.min(1, e.bleed.stacks / 6) });
+    if (e.burn.stacks > 0) statuses.push({ color: "oklch(0.75 0.19 45)", pct: Math.min(1, e.burn.stacks / 5) });
+    if (e.frozen > 0) statuses.push({ color: "oklch(0.65 0.18 220)", pct: Math.min(1, e.frozen / 120) });
+    if (statuses.length) {
+      const segW = w / statuses.length;
+      statuses.forEach((st, i) => {
+        ctx.fillStyle = st.color;
+        ctx.fillRect(e.pos.x - w / 2 + segW * i, barY + 5, segW * st.pct - 1, 2);
+      });
+    }
   }
   if (e.bleed.stacks > 0) {
     ctx.fillStyle = "oklch(0.5 0.2 25)";
     ctx.font = "10px serif"; ctx.textAlign = "center";
-    ctx.fillText(`❥${e.bleed.stacks}`, e.pos.x - 8, e.pos.y - sz - 14);
+    ctx.fillText(`❥${e.bleed.stacks}`, e.pos.x - 10, e.pos.y - sz - 16);
   }
   if (e.burn.stacks > 0) {
     ctx.fillStyle = "oklch(0.8 0.19 45)";
     ctx.font = "10px serif"; ctx.textAlign = "center";
-    ctx.fillText(`❋${e.burn.stacks}`, e.pos.x + 8, e.pos.y - sz - 14);
+    ctx.fillText(`❋${e.burn.stacks}`, e.pos.x + 10, e.pos.y - sz - 16);
   }
 }
 
