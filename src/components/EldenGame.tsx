@@ -1205,6 +1205,7 @@ export default function EldenGame() {
 
         {screen === "title" && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm text-center px-6">
+            <div className="text-xs text-red-500 mb-2">DEBUG screen={screen}</div>
             <h2 className="font-display text-3xl md:text-5xl text-gold-glow mb-3 tracking-[0.3em]">RISE, TARNISHED</h2>
             <p className="italic text-muted-foreground max-w-xl mb-8">
               The Lands Between crumble beneath a shattered ring. Six Great Enemies bar the road to lordship —
