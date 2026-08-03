@@ -1239,6 +1239,7 @@ export default function EldenGame() {
             onSelect={setSelectedClass}
             onStart={() => startRun(selectedClass)}
             onBack={() => setScreen("title")}
+            unlocked={profile.unlockedClasses}
           />
         )}
 
