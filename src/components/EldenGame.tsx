@@ -1211,11 +1211,11 @@ export default function EldenGame() {
               Grafted Scions, Crucible Knights, Margit, Godrick, Malenia, and the Starscourge himself. Choose a keepsake and descend.
             </p>
             <div className="flex gap-3 flex-wrap justify-center">
-              <button onClick={() => { unlockAudio(); sfx("menu"); setScreen("class"); }}
+              <button type="button" onClick={() => { unlockAudio(); sfx("menu"); setScreen("class"); }}
                 className="font-display tracking-[0.35em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
                 ◆ CHOOSE CLASS ◆
               </button>
-              <button onClick={() => { unlockAudio(); sfx("menu"); setScreen("hub"); }}
+              <button type="button" onClick={() => { unlockAudio(); sfx("menu"); setScreen("hub"); }}
                 className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
                 ▣ ROUNDHOLD ▣
               </button>
