@@ -594,6 +594,23 @@ export default function EldenGame() {
         }
       }
 
+      // contextual tutorials
+      if (s.roomsCleared === 0 && s.depth === 1) {
+        queueTutorial("move", "Walk, Tarnished", "WASD or Arrow Keys to move. Face enemies with your mouse.");
+      }
+      if (s.room.enemies.length > 0 && s.roomsCleared === 0) {
+        queueTutorial("attack", "Strike True", "Left-click to swing. Stamina recharges quickly — don't let it empty.");
+      }
+      if (s.room.chest && !s.room.chest.opened) {
+        queueTutorial("chest", "A Keepsake", "Press E near a chest to open it and claim its contents.");
+      }
+      if (s.room.grace && s.keys["e"]) {
+        queueTutorial("grace", "Site of Lost Grace", "Rest at a Site of Grace to fully restore HP, FP and flasks.");
+      }
+      if (p.sp >= 1) {
+        queueTutorial("skills", "The Skill Tree", "Press K to spend Skill Points earned from Lords.");
+      }
+
       // melee
       if (s.mouse.down && p.atkCd <= 0 && p.stamina >= 15) {
         p.atkCd = 22;
