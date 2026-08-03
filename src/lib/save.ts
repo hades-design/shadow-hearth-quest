@@ -24,6 +24,8 @@ export type Profile = {
   killedBosses: string[];         // EnemyKind[]
   bestiary: Record<string, number>; // enemyKind -> kills
   seenBiomes: string[];
+  unlockedClasses: string[];      // ClassId[]
+  boonRarityBoost: number;        // 0..1 incremental
   hub: {
     hpBonus: number;              // +HP base flat
     fpBonus: number;
@@ -49,6 +51,8 @@ export function defaultProfile(): Profile {
     version: 2,
     lostRunes: 0, deaths: 0, runsCompleted: 0, bestDepth: 0, totalPlaytimeMs: 0,
     killedBosses: [], bestiary: {}, seenBiomes: [],
+    unlockedClasses: ["vagabond", "warrior", "astrologer", "prophet"],
+    boonRarityBoost: 0,
     hub: { hpBonus: 0, fpBonus: 0, staminaBonus: 0, startingRunes: 0, startingStones: 0 },
     tutorialSeen: {},
     settings: { ...DEFAULT_SETTINGS },

@@ -4,6 +4,7 @@
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let muted = false;
+let sfxVolume = 1;
 
 function ac(): AudioContext {
   if (!ctx) {
@@ -18,6 +19,8 @@ function ac(): AudioContext {
 
 export function setMuted(v: boolean) { muted = v; if (master) master.gain.value = v ? 0 : 0.5; }
 export function isMuted() { return muted; }
+export function setSfxVolume(v: number) { sfxVolume = Math.max(0, Math.min(1, v)); }
+export function getSfxVolume() { return sfxVolume; }
 
 export function unlockAudio() {
   const c = ac();
@@ -34,7 +37,7 @@ function tone(freq: number, dur: number, type: OscillatorType = "sine", gain = 0
   osc.frequency.setValueAtTime(freq, t);
   if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), t + dur);
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(gain, t + 0.005);
+  g.gain.linearRampToValueAtTime(gain * sfxVolume, t + 0.005);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   osc.connect(g); g.connect(master!);
   osc.start(t); osc.stop(t + dur + 0.02);
@@ -54,7 +57,7 @@ function noise(dur: number, gain = 0.25, filterFreq = 1200, delay = 0) {
   filt.type = "lowpass";
   filt.frequency.value = filterFreq;
   const g = c.createGain();
-  g.gain.setValueAtTime(gain, t);
+  g.gain.setValueAtTime(gain * sfxVolume, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   src.connect(filt); filt.connect(g); g.connect(master!);
   src.start(t);

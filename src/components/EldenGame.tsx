@@ -7,7 +7,7 @@ import {
   Material, MATERIALS, Enchant, ENCHANTS, MAX_LEVEL, upgradeCost, levelMul,
   BOSS_LOOT, BOONS, Boon,
 } from "@/lib/gameData";
-import { sfx, setMuted, isMuted, unlockAudio } from "@/lib/audio";
+import { sfx, setMuted, isMuted, unlockAudio, setSfxVolume } from "@/lib/audio";
 import {
   loadProfile, saveProfile, recordKill, recordBossKill, tutorialSeen, markTutorialSeen,
   HUB_UPGRADES, hubCost, purchaseHub, type Profile, type HubUpgradeId,
@@ -19,6 +19,10 @@ import {
 } from "@/lib/biomes";
 import { spawnDamage, stepDamage, renderDamage, type DmgNumber, type DmgKind } from "@/lib/damageNumbers";
 import { startMusic, stopMusic, setMusicVolume, bossStinger } from "@/lib/music";
+import HubPanel from "@/components/HubPanel";
+import CodexPanel from "@/components/CodexPanel";
+import PausePanel from "@/components/PausePanel";
+import TutorialToast from "@/components/TutorialToast";
 
 // ============================================================================
 // Types & constants
@@ -271,6 +275,8 @@ export default function EldenGame() {
     setBoonChoice(null);
     setPanel("none");
     setScreen("play");
+    setMusicVolume(prof.settings.musicVol);
+    setSfxVolume(prof.settings.sfxVol);
     unlockAudio();
     sfx("menu");
   }, [s]);
@@ -289,15 +295,37 @@ export default function EldenGame() {
     p.maxFp = maxFp; p.fp = Math.min(maxFp, maxFp * rFp);
   }, [effStats, mods, screen, s]);
 
+  // Audio lifecycle: stop music when leaving play; apply volumes from profile
+  useEffect(() => {
+    if (screen === "play") {
+      const prof = loadProfile();
+      setMusicVolume(prof.settings.musicVol);
+      setSfxVolume(prof.settings.sfxVol);
+      if (!isMuted()) startMusic(s.biome.music);
+    } else {
+      stopMusic();
+    }
+  }, [screen, s.biome.music]);
+
   useEffect(() => {
     const kd = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       s.keys[k] = true;
       if (screen === "play") {
-        if (k === "i") { setPanel(p => p === "inventory" ? "none" : "inventory"); sfx("menu"); }
-        if (k === "k") { setPanel(p => p === "skills" ? "none" : "skills"); sfx("menu"); }
-        if (k === "u") { setPanel(p => p === "smith" ? "none" : "smith"); sfx("menu"); }
-        if (k === "escape") { setPanel("none"); setBoonChoice(null); }
+        const binds = profile.settings.binds;
+        if (k === binds.inventory) { setPanel(p => p === "inventory" ? "none" : "inventory"); sfx("menu"); }
+        if (k === binds.skills) { setPanel(p => p === "skills" ? "none" : "skills"); sfx("menu"); }
+        if (k === binds.smith) { setPanel(p => p === "smith" ? "none" : "smith"); sfx("menu"); }
+        if (k === binds.codex) { setPanel(p => p === "codex" ? "none" : "codex"); sfx("menu"); }
+        if (k === binds.pause) {
+          setPanel(p => {
+            if (p === "pause") return "none";
+            if (p !== "none") return "pause";
+            return "pause";
+          });
+          sfx("menu");
+        }
+        if (k === "escape" && panel !== "pause") { setPanel("none"); setBoonChoice(null); }
         if (k === "m") { const nm = !isMuted(); setMuted(nm); setMutedState(nm); }
       }
       if (k === " ") e.preventDefault();
@@ -306,7 +334,7 @@ export default function EldenGame() {
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
-  }, [s, screen]);
+  }, [s, screen, panel, profile.settings.binds]);
 
   // Boon choice actions ----------------------------------------------------
   const applyBoonChoice = useCallback((opt: BoonChoiceItem) => {
@@ -418,6 +446,12 @@ export default function EldenGame() {
 
     const showMsg = (t: string, sub = "", frames = 180) => {
       s.message = t; s.subtitle = sub; s.messageTime = frames; s.subtitleTime = frames;
+    };
+
+    const queueTutorial = (id: string, title: string, body: string) => {
+      if (s.profile && !tutorialSeen(s.profile, id) && !tutorial) {
+        setTutorial({ id, title, body });
+      }
     };
 
     const nextRoom = (dir: "n" | "s" | "e" | "w") => {
@@ -857,7 +891,19 @@ export default function EldenGame() {
           if (s.profile) recordBossKill(s.profile, bossKind);
           showMsg("GREAT ENEMY FELLED", def.name, 260);
           setTimeout(() => openBossChest(bossKind), 800);
-          if (s.bossesKilled >= 6) setTimeout(() => { sfx("victory"); setScreen("victory"); }, 2200);
+          if (s.bossesKilled >= 6) setTimeout(() => {
+            sfx("victory");
+            if (s.profile) {
+              s.profile.runsCompleted += 1;
+              s.profile.lostRunes += Math.floor(p.runes * 0.5);
+              s.profile.bestDepth = Math.max(s.profile.bestDepth, s.depth);
+              s.profile.totalPlaytimeMs += performance.now() - s.runStart;
+              saveProfile(s.profile);
+              setProfile({ ...s.profile });
+            }
+            stopMusic();
+            setScreen("victory");
+          }, 2200);
         } else {
           sfx("enemy_die");
           if (Math.random() < 0.18) {
@@ -924,7 +970,9 @@ export default function EldenGame() {
           s.profile.bestDepth = Math.max(s.profile.bestDepth, s.depth);
           s.profile.totalPlaytimeMs += performance.now() - s.runStart;
           saveProfile(s.profile);
+          setProfile({ ...s.profile });
         }
+        stopMusic();
         setScreen("dead");
       }
 
@@ -1145,10 +1193,16 @@ export default function EldenGame() {
               The Lands Between crumble beneath a shattered ring. Six Great Enemies bar the road to lordship —
               Grafted Scions, Crucible Knights, Margit, Godrick, Malenia, and the Starscourge himself. Choose a keepsake and descend.
             </p>
-            <button onClick={() => { unlockAudio(); sfx("menu"); setScreen("class"); }}
-              className="font-display tracking-[0.35em] text-sm px-10 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
-              ◆ CHOOSE YOUR CLASS ◆
-            </button>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <button onClick={() => { unlockAudio(); sfx("menu"); setScreen("class"); }}
+                className="font-display tracking-[0.35em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
+                ◆ CHOOSE CLASS ◆
+              </button>
+              <button onClick={() => { unlockAudio(); sfx("menu"); setScreen("hub"); }}
+                className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10 hover:text-gold-glow transition-all">
+                ▣ ROUNDHOLD ▣
+              </button>
+            </div>
             <div className="mt-10 grid grid-cols-[auto_auto] gap-x-8 gap-y-1 text-xs font-display tracking-widest text-muted-foreground">
               <div>WASD / ARROWS</div><div className="text-left">MOVE</div>
               <div>LEFT CLICK</div><div className="text-left">WEAPON ATTACK</div>
@@ -1156,8 +1210,8 @@ export default function EldenGame() {
               <div>RIGHT CLICK / Q</div><div className="text-left">CLASS ABILITY</div>
               <div>SHIFT</div><div className="text-left">DODGE ROLL</div>
               <div>E</div><div className="text-left">INTERACT (chests / graces)</div>
-              <div>I / K / U</div><div className="text-left">INVENTORY · SKILLS · SMITH</div>
-              <div>M</div><div className="text-left">MUTE AUDIO</div>
+              <div>I / K / U / J</div><div className="text-left">INV · SKILLS · SMITH · CODEX</div>
+              <div>M / ESC</div><div className="text-left">MUTE / PAUSE</div>
             </div>
           </div>
         )}
@@ -1176,9 +1230,10 @@ export default function EldenGame() {
             <h2 className="font-display text-6xl md:text-7xl mb-4 tracking-[0.3em]" style={{ color: "oklch(0.55 0.22 25)", textShadow: "0 0 26px oklch(0.4 0.2 25)" }}>YOU DIED</h2>
             <p className="italic text-muted-foreground mb-2">Reached depth {s.depth} · felled {s.bossesKilled} of 6 Lords</p>
             <p className="italic text-[color:var(--gold)]/70 mb-6 max-w-md">"The flame of ambition ever flickers, Tarnished..."</p>
-            <div className="flex gap-3">
-              <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ NEW CLASS ◆</button>
-              <button onClick={() => startRun(s.cls.id)} className="font-display tracking-[0.3em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ RETURN TO GRACE ◆</button>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ NEW CLASS ◆</button>
+              <button onClick={() => startRun(s.cls.id)} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ RETURN TO GRACE ◆</button>
+              <button onClick={() => setScreen("hub")} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10">▣ ROUNDHOLD ▣</button>
             </div>
           </div>
         )}
@@ -1189,8 +1244,29 @@ export default function EldenGame() {
             <p className="italic text-muted-foreground max-w-xl mb-6">
               Six Great Runes reclaimed. The shattered ring mends beneath your grasp. The age of the Tarnished begins.
             </p>
-            <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-10 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ BEGIN NEW JOURNEY ◆</button>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <button onClick={() => setScreen("class")} className="font-display tracking-[0.3em] text-sm px-8 py-3 border border-[color:var(--gold)]/70 text-[color:var(--gold)] hover:bg-[color:var(--gold)]/10">◆ BEGIN NEW JOURNEY ◆</button>
+              <button onClick={() => setScreen("hub")} className="font-display tracking-[0.3em] text-sm px-6 py-3 border border-[color:var(--gold)]/50 text-[color:var(--gold)]/80 hover:bg-[color:var(--gold)]/10">▣ ROUNDHOLD ▣</button>
+            </div>
           </div>
+        )}
+
+        {screen === "hub" && (
+          <HubPanel
+            profile={profile}
+            onPurchase={(id) => {
+              const next = { ...profile };
+              if (purchaseHub(next, id)) {
+                setProfile(next);
+                saveProfile(next);
+                sfx("upgrade");
+              } else {
+                sfx("menu");
+              }
+            }}
+            onClose={() => setScreen("title")}
+            onStartRun={() => setScreen("class")}
+          />
         )}
 
         {screen === "play" && panel === "inventory" && (
@@ -1215,8 +1291,35 @@ export default function EldenGame() {
             onClose={() => setPanel("none")}
           />
         )}
+        {screen === "play" && panel === "codex" && (
+          <CodexPanel bestiary={profile.bestiary} killedBosses={profile.killedBosses} onClose={() => setPanel("none")} />
+        )}
+        {screen === "play" && panel === "pause" && (
+          <PausePanel
+            settings={profile.settings}
+            onSettingsChange={(settings) => {
+              const next = { ...profile, settings };
+              setProfile(next);
+              saveProfile(next);
+              setMusicVolume(settings.musicVol);
+              setSfxVolume(settings.sfxVol);
+              setMuted(settings.sfxVol === 0 && settings.musicVol === 0);
+              setMutedState(settings.sfxVol === 0 && settings.musicVol === 0);
+            }}
+            onResume={() => setPanel("none")}
+            onQuit={() => { stopMusic(); setScreen("title"); setPanel("none"); }}
+          />
+        )}
         {screen === "play" && boonChoice && (
           <BoonChoicePanel choice={boonChoice} onPick={applyBoonChoice} />
+        )}
+
+        {screen === "play" && tutorial && (
+          <TutorialToast
+            title={tutorial.title}
+            body={tutorial.body}
+            onClose={() => { setTutorial(null); if (s.profile) markTutorialSeen(s.profile, tutorial.id); }}
+          />
         )}
       </div>
 
