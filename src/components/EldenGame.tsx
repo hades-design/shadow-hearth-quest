@@ -1943,29 +1943,36 @@ function AbilitySlot({ label, hint, cd, icon, cost, fp, accent }: { label: strin
   );
 }
 
-function ClassSelect({ selected, onSelect, onStart, onBack }: {
+function ClassSelect({ selected, onSelect, onStart, onBack, unlocked }: {
   selected: ClassId; onSelect: (c: ClassId) => void; onStart: () => void; onBack: () => void;
+  unlocked: ClassId[];
 }) {
   const cls = CLASSES.find(c => c.id === selected)!;
+  const locked = (id: ClassId) => !unlocked.includes(id);
   return (
     <div className="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col p-6">
       <div className="text-center mb-3">
         <h2 className="font-display text-2xl md:text-3xl text-gold-glow tracking-[0.3em]">CHOOSE A KEEPSAKE</h2>
-        <p className="italic text-xs text-muted-foreground">Six pilgrimages await, Tarnished.</p>
+        <p className="italic text-xs text-muted-foreground">Six pilgrimages await, Tarnished. Unlock more at the Roundtable Hold.</p>
       </div>
       <div className="grid grid-cols-6 gap-2 mb-4">
-        {CLASSES.map(c => (
-          <button
-            key={c.id}
-            onClick={() => { sfx("menu"); onSelect(c.id); }}
-            className={`border transition-all p-3 flex flex-col items-center gap-1 ${selected === c.id ? "border-[color:var(--gold)] bg-[color:var(--gold)]/10" : "border-[color:var(--gold)]/25 hover:border-[color:var(--gold)]/60"}`}
-            style={{ boxShadow: selected === c.id ? `0 0 20px ${c.accent}88` : undefined }}
-          >
-            <div className="text-3xl font-display" style={{ color: c.accent, textShadow: `0 0 12px ${c.accent}` }}>{c.sigil}</div>
-            <div className="font-display text-[11px] tracking-widest text-[color:var(--gold)]/90">{c.name.toUpperCase()}</div>
-            <div className="text-[9px] italic text-muted-foreground">{c.title}</div>
-          </button>
-        ))}
+        {CLASSES.map(c => {
+          const isLocked = locked(c.id);
+          return (
+            <button
+              key={c.id}
+              disabled={isLocked}
+              onClick={() => { sfx("menu"); onSelect(c.id); }}
+              className={`border transition-all p-3 flex flex-col items-center gap-1 relative ${selected === c.id ? "border-[color:var(--gold)] bg-[color:var(--gold)]/10" : isLocked ? "border-[color:var(--gold)]/10 opacity-40" : "border-[color:var(--gold)]/25 hover:border-[color:var(--gold)]/60"}`}
+              style={{ boxShadow: selected === c.id ? `0 0 20px ${c.accent}88` : undefined }}
+            >
+              {isLocked && <div className="absolute top-1 right-1 text-[10px] text-muted-foreground">🔒</div>}
+              <div className="text-3xl font-display" style={{ color: c.accent, textShadow: `0 0 12px ${c.accent}` }}>{c.sigil}</div>
+              <div className="font-display text-[11px] tracking-widest text-[color:var(--gold)]/90">{c.name.toUpperCase()}</div>
+              <div className="text-[9px] italic text-muted-foreground">{isLocked ? "Locked" : c.title}</div>
+            </button>
+          );
+        })}
       </div>
       <div className="grid grid-cols-[1fr_1fr] gap-6 flex-1">
         <div>
